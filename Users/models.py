@@ -1,6 +1,11 @@
+from channels.layers import get_channel_layer
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.contrib.auth.models import User
+from .consumers import ChatRoomConsumer
+from asgiref.sync import async_to_sync
+import websocket
+import json
 
 
 def image_validate_file_extension(value):
@@ -65,3 +70,18 @@ class Message(models.Model):
         if self.reply_to is not None:
             if self.reply_to.chat.id != self.chat.id:
                 raise ValidationError("error occurred! message not found")
+
+    def save(self, *args, **kwargs):
+        is_new_instance = self.pk is None
+        super().save(*args, **kwargs)
+        if is_new_instance:
+            channel_layer = get_channel_layer()
+
+            async_to_sync(channel_layer.group_send(
+                'chat_%s' % self.chat.id,  # Replace with the actual group name you want to send the message to
+                {
+                    "type": "send_message",
+                    "message": self.text,
+                    "username": self.sender.user.username  # Replace field_name with the actual field name you want to include
+                }
+            ))
